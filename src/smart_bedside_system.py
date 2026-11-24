@@ -22,8 +22,9 @@ class SmartBedsideSystem:
         GPIO.setmode(GPIO.BOARD)  # Refer to the GPIO pins by their physical number on the board.
         GPIO.setwarnings(False)  # Disable warnings.
 
-        self.spo2_hr_sensor = None  # Replace None by initializing the MAX30102 sensor (see User Story #1).
-
+        self.spo2_hr_sensor = DFRobot_BloodOxygen_S()# Replace None by initializing the MAX30102 sensor (see User Story #1).
+        self.spo2_hr_sensor.begin()
+        self.spo2_hr_sensor.sensor_start_collect()
         self.alarm_on = None  # Replace None by initializing the alarm status (see User Story #2).
 
         self.o2_servo = None  # Replace None by initializing the servo motor's PWM instance (see User Story #4).
@@ -36,6 +37,11 @@ class SmartBedsideSystem:
         Raises: SmartBedsideError: If the sensor returns an invalid reading (-1).
         """
         # See User Story #1.
+        hr_sensor = self.spo2_hr_sensor.get_spo2()
+        if hr_sensor != 98:
+            raise SmartBedsideError(f"Invalid hr sensor")
+        return self.spo2_hr_sensor.get_spo2()
+
 
     def manage_alarm(self) -> None:
         """
