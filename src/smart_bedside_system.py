@@ -22,26 +22,36 @@ class SmartBedsideSystem:
         GPIO.setmode(GPIO.BOARD)  # Refer to the GPIO pins by their physical number on the board.
         GPIO.setwarnings(False)  # Disable warnings.
 
-        self.spo2_hr_sensor = DFRobot_BloodOxygen_S()# Replace None by initializing the MAX30102 sensor (see User Story #1).
+        # User Story #1: MAX30102 sensor initialization
+        self.spo2_hr_sensor = DFRobot_BloodOxygen_S()
         self.spo2_hr_sensor.begin()
         self.spo2_hr_sensor.sensor_start_collect()
-        self.alarm_on = None  # Replace None by initializing the alarm status (see User Story #2).
 
-        self.o2_servo = None  # Replace None by initializing the servo motor's PWM instance (see User Story #4).
-        self.o2_valve_angle = None  # Replace None by initializing the valve angle, in degrees (see User Story #4).
+        # User Story #2: Buzzer initialization
+        GPIO.setup(self.BUZZER_PIN, GPIO.OUT, initial=GPIO.LOW)
+        self.alarm_on = False
 
-    def read_vital_signs(self) -> int:
+        # User Story #3: Pushbutton initialization
+        GPIO.setup(self.BUTTON_PIN, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
+
+        # User Story #4: Servo motor initialization
+        GPIO.setup(self.O2_SERVO_PIN, GPIO.OUT)
+        self.o2_servo = GPIO.PWM(self.O2_SERVO_PIN, 50)
+        self.o2_servo.start(5.0)
+        self.o2_valve_angle = 0.0
+
+    def read_vital_signs(self) -> list:
         """
         Read the patient's blood oxygen saturation (SpO₂).
         Returns: int: SpO₂ percentage (70–100).
         Raises: SmartBedsideError: If the sensor returns an invalid reading (-1).
         """
         # See User Story #1.
-        hr_sensor = self.spo2_hr_sensor.get_spo2()
-        if hr_sensor != 98:
-            raise SmartBedsideError(f"Invalid hr sensor")
-        return self.spo2_hr_sensor.get_spo2()
-
+        spo2 = self.spo2_hr_sensor.get_spo2()
+        heart_beat = self.spo2_hr_sensor.get_heartbeat()
+        if spo2 == -1 or heart_beat == -1:
+            raise SmartBedsideError("Invalid SpO₂ OR reading from sensor.")
+        return [spo2, heart_beat]
 
     def manage_alarm(self) -> None:
         """
@@ -49,12 +59,22 @@ class SmartBedsideSystem:
         Raises: SmartBedsideError: If the SpO₂ reading is invalid (propagated from read_vital_signs()).
         """
         # See User Story #2.
+        spo2 = self.read_vital_signs()
+        if spo2 < 88:
+            GPIO.output(self.BUZZER_PIN, True)
+            self.alarm_on = True
+        else:
+            GPIO.output(self.BUZZER_PIN, False)
+            self.alarm_on = False
 
     def stop_alarm(self) -> None:
         """
         Stop the alarm if the pushbutton is pressed. Otherwise, leave the alarm unchanged.
         """
         # See User Story #3.
+        if GPIO.input(self.BUTTON_PIN):
+            GPIO.output(self.BUZZER_PIN, False)
+            self.alarm_on = False
 
     def set_o2_valve_angle(self, angle: float) -> None:
         """
@@ -63,6 +83,11 @@ class SmartBedsideSystem:
         Raises: SmartBedsideError: If the target angle is outside the valid range of 0 to 180 degrees.
         """
         # See User Story #4.
+        if angle < 0.0 or angle > 180.0:
+            raise SmartBedsideError(f"Invalid target angle: {angle}. Must be between 0 and 180 degrees.")
+        duty_cycle = 5.0 + (angle / 180.0) * 5.0
+        self.o2_servo.ChangeDutyCycle(duty_cycle)
+        self.o2_valve_angle = angle
 
     def manage_oxygen_valve(self) -> None:
         """
@@ -73,3 +98,8 @@ class SmartBedsideSystem:
         Raises: SmartBedsideError: If the SpO₂ reading is invalid (propagated from read_vital_signs()).
         """
         # See User Story #5.
+        spo2 = self.read_vital_signs()
+        if spo2 < 95:
+            self.set_o2_valve_angle(180.0)
+        else:
+            self.set_o2_valve_angle(0.0)
